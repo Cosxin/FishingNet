@@ -3,6 +3,7 @@ using log4net.Appender;
 using log4net.Repository.Hierarchy;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Diagnostics;
 using System.Drawing;
 using System.Threading;
@@ -18,10 +19,13 @@ namespace FishingFun
         private IBobberFinder bobberFinder;
         private IBiteWatcher biteWatcher;
         private bool isEnabled;
+        private (int, int) mouseClicked = (0, 0);
         private Stopwatch stopwatch = new Stopwatch();
         private static Random random = new Random();
+        private static readonly string savePath = "E://fishdata";
 
         public event EventHandler<FishingEvent> FishingEventHandler;
+
 
         public FishingBot(IBobberFinder bobberFinder, IBiteWatcher biteWatcher, ConsoleKey castKey, List<ConsoleKey> tenMinKey)
         {
@@ -33,6 +37,7 @@ namespace FishingFun
             logger.Info("FishBot Created.");
 
             FishingEventHandler += (s, e) => { };
+
         }
 
         public void Start()
@@ -43,6 +48,8 @@ namespace FishingFun
 
             DoTenMinuteKey();
 
+            ScreenRecorder.SetBufferSize(40);
+
             while (isEnabled)
             {
                 try
@@ -52,11 +59,29 @@ namespace FishingFun
                     PressTenMinKeyIfDue();
 
                     FishingEventHandler?.Invoke(this, new FishingEvent { Action = FishingAction.Cast });
+
+                    Thread.Sleep(250);
+
                     WowProcess.PressKey(castKey);
+                       
+                    ScreenRecorder.StartLoop();
 
                     Watch(2000);
 
-                    WaitForBite();
+                    var bobberPosition = WaitForBite();
+
+                    Thread.Sleep(200);  // last_n_pos += 1 for every 200ms
+
+                    ScreenRecorder.StopLoop();
+
+                    if (bobberPosition != Point.Empty)
+                    {
+                        Loot(bobberPosition);
+                        ScreenRecorder.SaveRecords(WowScreen.GetBitmapPositionFromScreenPosition(bobberPosition)， savePath);
+                    }
+
+                    ScreenRecorder.EnsureEmpty();
+
                 }
                 catch (Exception e)
                 {
@@ -67,6 +92,7 @@ namespace FishingFun
 
             logger.Error("Bot has Stopped.");
         }
+
 
         public void SetCastKey(ConsoleKey castKey)
         {
@@ -91,14 +117,15 @@ namespace FishingFun
             logger.Error("Bot is Stopping...");
         }
 
-        private void WaitForBite()
+        private Point WaitForBite()
         {
             bobberFinder.Reset();
+            mouseClicked = (0, 0);
 
             var bobberPosition = FindBobber();
             if (bobberPosition == Point.Empty)
             {
-                return;
+                return Point.Empty;
             }
 
             this.biteWatcher.Reset(bobberPosition);
@@ -108,20 +135,23 @@ namespace FishingFun
             var timedTask = new TimedAction((a) => { logger.Info("Fishing timed out!"); }, 25 * 1000, 25);
 
             // Wait for the bobber to move
-            while (isEnabled)
+            while (isEnabled && mouseClicked == (0, 0))
             {
                 var currentBobberPosition = FindBobber();
-                if (currentBobberPosition == Point.Empty || currentBobberPosition.X == 0) { return; }
+                if (currentBobberPosition == Point.Empty || currentBobberPosition.X == 0) { return Point.Empty; }
 
                 if (this.biteWatcher.IsBite(currentBobberPosition))
                 {
-                    Loot(bobberPosition);
-                    PressTenMinKeyIfDue();
-                    return;
+                    return bobberPosition;
                 }
 
-                if (!timedTask.ExecuteIfDue()) { return; }
+                if (!timedTask.ExecuteIfDue()) { return Point.Empty; }
             }
+
+            if (mouseClicked != (0, 0))
+                return new Point(mouseClicked.Item1, mouseClicked.Item2);
+
+            return Point.Empty;
         }
 
         private DateTime StartTime = DateTime.Now;

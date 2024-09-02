@@ -1,196 +1,128 @@
 
-# Fishing Fun - A World of Warcraft Bot
+# FishingNet - WoW fishing with a CNNLSTM model 
 
-In World of Warcraft, Fishing is a time consuming task which is simple and so lends itself to automation very well. There are many fishing bots out there. This article describes the bot that I wrote for fun and the problems I solved to make it work.
+A lightweight model that detect small object and predict action simultaneously. 
 
-### Why Fish ?
+A baseline model is provided for study and evaluation purposes. However, it does not represent the highest achievable accuracy. For improved performance, please consider collecting your own data and training the model yourself.
 
-Fishing is a way to catch fish which can be used to cook food, which is used to heal or increase the stats of your character. You can also gain achievements through fishing. 
+### How it works
 
-The mechanics of fishing involve casting your line into in-land or sea waters and then waiting up to 30 seconds for a bite, then clicking to loot within a couple of seconds to catch the fish.
+- Capture screenshots at 6 fps and save them in a buffer.
+- Model use last three frames as input to detect where the bobber is, and whether an action should be taken.
 
-## Video of the bot in action
+### Performance
 
-https://www.youtube.com/watch?v=T6reHXxA5f0
+#### Model error
 
-[![Fishing Fun YouTube](https://img.youtube.com/vi/T6reHXxA5f0/0.jpg)](https://www.youtube.com/watch?v=T6reHXxA5f0)
+In most scenario, the baseline model achieves a 15 pixels localization error with only 75% action accuracy, which has great room for improvement.
+
+#### Supported Fishing Zones
+
+Open blue ocean, with minimal background noise.
+
+It works best at Garrison fishing shack because that's where most of the training data comes from.
+
+Not working with lava, and it is sensitive to red noise, because of the lack of training data.
+
+#### Inference time
+
+About 30ms on RTX 3060.
+
+### Major Changes to FishingFun
+
+- Added a ScreenRecorder to make the original FishingFun program also a data annotation tool. 
+- Replaced the rule-based bobber finder and action watcher with model-based ones.
+- Now only watch the center 640x640 regions of the screen. 
+- Provided a training script written in pytorch. 
+
 
 # Getting it working
 
-## 1. Download this repository
+## 1. FishingFun Setup
 
-Put the contents of the repo into a folder. e.g "C:\FishingFun". I am going to refer to this folder from now on, so just substitute your own folder path.
+Please refer to the original [FishingFun repo](https://github.com/julianperrott/FishingFun).
 
-## 2. Install Visual Studio
+## 2. Use Model in FishingFun
 
-You will need to install Visual Studio, get it here: https://visualstudio.microsoft.com/vs/ use Community 2019 or later.
-- Under 'Desktop & mobile' - Select .Net desktop development.
-- Here is a video which shows installation (note you don't need python) https://www.youtube.com/watch?v=1uBESL2S8Ik&ab_channel=JonJensen
+First, follow document in step 1 to rebuild this, then locate chrome.exe, which is typically found in the repo_dir/bin/debug (or release) directory. Next, place the model folder in the same directory as chrome.exe. This ensures that your ONNX file is accessible from the exe file at the path: ./model/cnnlstm.onnx.
 
-Requires: Dot net framework 4.7 https://dotnet.microsoft.com/download/dotnet-framework, this should automatically be installed with visual studio.
+## 3. Training and More
 
-## 3. Build and run the Bot
+### General workflow
 
-Double click on the solution file to open it: "C:\FishingFun\source\FishingFun.sln", or open it from visual studio.
 
-Once loaded click the Start button, this should build and run the project FishingFun.UI. Alternatively use F5 or menu 'Debug -> Start Debugging'.
+To train and use your own model, follow these steps:
 
-Once it has built you can run it without visual studio by navigating with File Explorer to folder C:\FishingFun\Source\bin\Debug and run by double clicking on Chrome.exe
+1. Collect more data with modified FishingFun
+2. Train model use the script under pytorch folder
+3. Evaluate model against the baseline model and export model to onnx format
+4. Copy new model to model folder, and specify the onnx model in FishingFun model.csharp
 
-If you want run a version without a GUI you need to set the startup project in visual studio to FishingFun.Console by right clicking on the project in the Solution Explorer and choosing 'Set as startup project', then build (F6). You should now have C:\FishingFun\Source\bin\Debug\powershell.exe which you can run outside of visual studio.
 
-## 4. Bot Running Instructions
 
-* Enable 'Autoloot' (Esc, Interface Options, Controls, Check Autoloot)
-* Turn off Click to move (Esc, Interface Options, Mouse, Uncheck Click to move)
-* Make sure 'Right Click' loots.
-* Put the cast fishing Button on poistion 4 of your Action Bar. I.e. when 4 is clicked fishing will cast.
-* Zoom in completely so your character is not visible.
-* Make sure the fishing float is in the middle of the screen.
-* Fish at close to ground level as you can, not off docks or other high places.
-* It requires that WOW is running Full screen (not windowed) on the primary screen. It needs the wow screen to be on top. So it probably won't work well if you only have one screen. If you need it windowed then I suggest you look at the code in this fork: https://github.com/petrvecera/FishingFun
-* Sometimes you may need to adjust the colour parameters for the bobber finder, such as during evening time or if there is a lot of red in the landscape.
+### Pytorch scripts
 
-----
 
-## Fishing in Lava
+Scripts are located in pytorch folder. Sample training data are located in data folder.
 
-To get the 'Fire Ammonite Angler' achievement you need to fish in Lava. Lava is red making it impossible to see the red feather, so you need to switch to the blue feather. On the main page click the orange configuration button, then change the 'Watch Feather' combo from Red to 'Blue'
+for training:
+```
+python3 train.py --output_path checkpoints --epoch 20
+```
 
-Use a macro like this on your fishing key:
+for generating output:
+```
+python3 test.py --model_path checkpoints/cnnlstm_epoch5.pth --output_path workdir
+```
 
-        /use Fire Ammonite Bait
-        /cast Fishing
+for exporting to onnx:
+```
+python3 export.py --model_path checkpoints/cnnlstm_epoch5.pth --output_path model/cnnlstm_epoch5.onnx
+```
 
-![Fishing in Lava](/post/img/lava.png)
+Add --gpus flag for distributed training.
 
-## All about the bot
 
-### To catch fish, what would a bot have to do ?
+### Visualizing Detection Result
 
-The bot needs to transition through the following states:
+vis.py provides a wrapper to visualize detection result.
 
-* Casting.
-* Watching the bobber for a bite. If a bite is seen then move to Looting. If the bobber is not seen for a few seconds or 30 seconds elapses then move back to the casting state.
-* Looting.
 
-### What problems are there to solve ?
 
-The main problems are: 
+### Prepare More training data
 
-* Finding the coordinates of the bobber on the screen.
-* Then determining when a bite has taken place.
+###
 
-#### Problem 1: Finding the bobber
 
-The bobber is tiny on the screen, we need to make it easier to find. 
 
-![Screen Zoomed Out](/post/img/fishingfun_zoomedout.jpg)
 
+### Two cents on effective training
 
-Changing the character view to fully zoomed in means that the bobber is bigger and there is less clutter on the screen. 
+#### Pure CNN Doesn't Work for Object Localization?
 
-To further simplify finding the bobber, it must appear in the middle half of the screen as viewed by the character. Indicated by the red area in the image below.
 
-![Screen Zoomed In](/post/img/FishingFun_ZoomedIn.jpg)
+My intuition is that when you have single simple object with fixed size, combining a CNN with heatmap matching actully works and is the most straightforward solution.
 
-The bobber is pretty easy for us to spot now, but a computer needs a simple way to determine where the bobber is. We could train an AI to find the float, but that seems like an over complicated solution. Perhaps we can use the red colour of the bobber to locate it ?
+#### Dataset Balance
 
-If we find all the red pixels in middle half of the screen, then find the pixel with most red pixels around it then we should have our bobber location !
+A balanced dataset plays a critical role in achieving best performance. Ideally, you want a dataset that:
 
-We can get a bitmap of the screen as below:
-<pre class="prettyprint">
-public static Bitmap GetBitmap()
-{
-    var bmpScreen = new Bitmap(Screen.PrimaryScreen.Bounds.Width / 2, Screen.PrimaryScreen.Bounds.Height / 2);
-    var graphics = Graphics.FromImage(bmpScreen);
-    graphics.CopyFromScreen(Screen.PrimaryScreen.Bounds.Width / 4, Screen.PrimaryScreen.Bounds.Height / 4, 0, 0, bmpScreen.Size);
-    graphics.Dispose();
-    return bmpScreen;
-}
-</pre>
+1. **Collected from different zones, areas, weather conditions, and times of day.**
+    - **Solution**: Just go to different places to collect the data, e.g., lava zones, fel water, etc.
 
-#### Problem 2: Determining when a bite has taken place.
+2. **Incorporate dynamically changing environments, which means that in the same sequence, something is changing in the background, e.g. a mob walking.**
+    - **Solution**: Find somewhere with a mob in the background to add complexity to the training data, but this might mess up with the rule-based detection, so you will have trouble collecting data.
+    - **Solution**: You might want to develop an annotation function that uses DLL injection, takes mouse input, and saves coordinates; this is something I tried and failed.
 
-When a bite occurs the bobber moves down a few pixels. If we track the position of the bobber while fishing, we can see an obvious change in the Y position when the bite happens.
+3. **With about the same number of action frames and non-action frames.**
+    - **Solution**: Just do resampling in the dataset loader.
 
-### Determining the location of the red feather on the bobber
+4. **Most important! The location of the bobber should be randomized.**
+    - Without randomized locations, the CNN tends to consistently output the most "seen" coordinates. If you want to learn more about this, search for "ConvCoords."
+    - This is acutally difficult to solve. I managed to get around this by copying and pasting the bobber to a new random location for every sequence; however, if you do this for every sequence, the model will predict where the cropped effects are rather than finding the bobber.
+    - Randomizing 50% of the bobber locations seems to work best.
 
-Due to the different times of day and environments in the game, the red bobber feather changes its shade of red, it also has a range of red shades within it. We need to classify all these colours as being red.
 
-![Fishing Bobbers](/post/img/fishingfun_bobbers.png)
+## Acknowlegement
 
-The pixels we are looking for are going have an RGB value with a high Red value compared to the Green and Blue. In the colour cube below we are looking for the colours in the back left.
-
-![Colour Cube](/post/img/finshingfun_cube.png)
-
-This is the algorithm I have created to determine redness:
-
-* Red is greater that Blue and Green by a chosen percentage e.g. 200%.
-* Blue and Green are reasonably close together.
-
-<pre class="prettyprint" >
-public double ColourMultiplier { get; set; } = 0.5;
-public double ColourClosenessMultiplier { get; set; } = 2.0;
-
-public bool IsMatch(byte red, byte green, byte blue)
-{
-    return isBigger(red, green) && isBigger(red, blue) && areClose(blue, green);
-}
-
-private bool isBigger(byte red, byte other)
-{
-    return (red * ColourMultiplier) > other;
-}
-
-private bool areClose(byte color1, byte color2)
-{
-    var max = Math.Max(color1, color2);
-    var min = Math.Min(color1, color2);
-
-    return min * ColourClosenessMultiplier > max - 20;
-}
-</pre>
-
-In the animation below which shows the Red value changing from 0 to 255 within a 2D square of all possible Blue and Green values, the algorithm matches the red colours within the white boundary. These are all the possible colours which it considers as being in the red feather.
-
-![Red Match Animation](/post/img/fishingfun_red.png)
-
-----
-
-### The User Interface
-
-The WPF user interface I created allows the user to see what the bot sees and how it is doing finding the bobber. This 
-helps to determine how well it is working.
-
-#### Main Screen
-
-On the left of the UI there is an screenshot which shows the part of the screen being monitored, the bobber position is indicated by a recticle, the recognised red pixels are shown in pure red colour.
-
-![Screenshot1](/post/img/FishingFun_Screenshot1.jpg)
-
-
-
-In the top right the amplitude of the bobber is shown in an animated graph ([lvcharts.net](https://lvcharts.net/)). It moves up and down a few pixels during fishing. When the bite occurs it drops 7 or more pixels.
-
-![Screenshot Looting](https://raw.githubusercontent.com/julianperrott/FishingFun/master/post/img/Screenshot2.png "Fishing Fun - Looting")
-
-#### Colour Configuration Screen
-
-A second configuration screen allows the investigation of different settings for the 'Red' pixel detection.
-
-![Screenshot3](/post/img/FishingFun_Screenshot3.jpg)
-
-
-### Console Version
-
-A console version is also available if the UI is not needed. It exposes the log so that some feedback on the bot performance is given to the user.
-
-![Screenshot Console](/post/img/FishingFun_Console.png)
-
-
-
-
-
-
-
+A big thank you to the original authors of the FishingFun project for creating such an awesome and easy-to-use tool!

@@ -19,10 +19,11 @@ namespace FishingFun
         private IBobberFinder bobberFinder;
         private IPixelClassifier pixelClassifier;
         private IBiteWatcher biteWatcher;
+        private IImageProvider? imageProvider;
         private ReticleDrawer reticleDrawer = new ReticleDrawer();
 
-        private FishingBot? bot;
-        private int strikeValue = 7; // this is the depth the bobber must go for the bite to be detected
+        private FishingBotAI? bot;
+        //private readonly int strikeValue = 7; // this is the depth the bobber must go for the bite to be detected
         private bool setImageBackgroundColour = true;
         private Timer WindowSizeChangedTimer;
         private System.Threading.Thread? botThread;
@@ -36,16 +37,16 @@ namespace FishingFun
             this.DataContext = LogEntries = new ObservableCollection<LogEntry>();
             this.pixelClassifier = new PixelClassifier();
             pixelClassifier.SetConfiguration(WowProcess.IsWowClassic());
-             
-            this.bobberFinder = new SearchBobberFinder(pixelClassifier);
 
-            var imageProvider = bobberFinder as IImageProvider;
+            var bobberFinderBiteWatcher = new ModelBobberFinderBiteWatcher();
+            this.bobberFinder = bobberFinderBiteWatcher as IBobberFinder;
+            this.biteWatcher = bobberFinderBiteWatcher as IBiteWatcher;
+            this.imageProvider = bobberFinderBiteWatcher as IImageProvider;
+
             if (imageProvider != null)
             {
                 imageProvider.BitmapEvent += ImageProvider_BitmapEvent;
             }
-
-            this.biteWatcher = new PositionBiteWatcher(strikeValue);
 
             this.WindowSizeChangedTimer = new Timer { AutoReset = false, Interval = 100 };
             this.WindowSizeChangedTimer.Elapsed += SizeChangedTimer_Elapsed;
@@ -164,7 +165,8 @@ namespace FishingFun
 
         public void BotThread()
         {
-            bot = new FishingBot(bobberFinder, this.biteWatcher, KeyChooser.CastKey, new List<ConsoleKey> { ConsoleKey.D5, ConsoleKey.D6 });
+
+            bot = new FishingBotAI(this.bobberFinder, this.biteWatcher, KeyChooser.CastKey, new List<ConsoleKey> { ConsoleKey.D4, ConsoleKey.D9 });
             bot.FishingEventHandler += FishingEventHandler;
             bot.Start();
 

@@ -7,7 +7,7 @@ namespace FishingFun
 {
     public partial class KeyBindChooser : UserControl
     {
-        public ConsoleKey CastKey { get; set; } = ConsoleKey.D4;
+        public ConsoleKey CastKey { get; set; } = ConsoleKey.D7;
 
         private static string Filename = "keybind.txt";
 

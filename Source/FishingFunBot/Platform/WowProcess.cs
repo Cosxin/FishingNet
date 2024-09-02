@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Windows.Forms;
 
 #nullable enable
 
@@ -16,12 +17,12 @@ namespace FishingFun
 
         private const UInt32 WM_KEYDOWN = 0x0100;
         private const UInt32 WM_KEYUP = 0x0101;
-        private static ConsoleKey lastKey;
         private static Random random = new Random();
-        public static int LootDelay=2000;
+        public static int LootDelay = 2000;
+        private static Process? wow_process = null;
 
 
-        public static bool IsWowClassic()
+    public static bool IsWowClassic()
         {
             var wowProcess = Get();
             return wowProcess != null ? wowProcess.ProcessName.ToLower().Contains("classic") : false; ;
@@ -30,13 +31,17 @@ namespace FishingFun
         //Get the wow-process, if success returns the process else null
         public static Process? Get(string name = "")
         {
+            if (wow_process != null) return wow_process;
+
             var names = string.IsNullOrEmpty(name) ? new List<string> { "Wow", "WowClassic", "Wow-64" } : new List<string> { name };
+           // var names = string.IsNullOrEmpty(name) ? new List<string> { "qgis", "WowClassic", "Wow-64" } : new List<string> { name };
 
             var processList = Process.GetProcesses();
             foreach (var p in processList)
             {
                 if (names.Select(s => s.ToLower()).Contains(p.ProcessName.ToLower()))
                 {
+                    wow_process = p;
                     return p;
                 }
             }
@@ -65,17 +70,11 @@ namespace FishingFun
 
         private static void KeyDown(ConsoleKey key)
         {
-            lastKey = key;
             var wowProcess = Get();
             if (wowProcess != null)
             {
                 PostMessage(wowProcess.MainWindowHandle, WM_KEYDOWN, (int)key, 0);
             }
-        }
-
-        private static void KeyUp()
-        {
-            KeyUp(lastKey);
         }
 
         public static void PressKey(ConsoleKey key)
@@ -98,9 +97,19 @@ namespace FishingFun
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetCursorPos(int x, int y);
 
+        public static void RightClickMouseCenter()
+        {
+            var x = Screen.PrimaryScreen.Bounds.Size.Width / 2;
+            var y = Screen.PrimaryScreen.Bounds.Size.Height / 2;
+            System.Drawing.Point position = new System.Drawing.Point(x, y);
+            RightClickMouse(WowProcess.logger, position);
+        }
+
         public static void RightClickMouse(ILog logger, System.Drawing.Point position)
         {
-            //RightClickMouse_Original(logger, position);
+            // Calculate timestamp in milliseconds
+            long timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+
             RightClickMouse_LiamCooper(logger, position);
         }
 
@@ -171,6 +180,48 @@ namespace FishingFun
                 RefocusOnOldScreen(logger, activeProcess, wowProcess, oldPosition);
                 Thread.Sleep(LootDelay / 2);
             }
+        }
+
+        public static void PressKeyDuration(ConsoleKey key, int duration)
+        {
+            Thread thread = new Thread(() =>
+            {
+                DateTime startTime = DateTime.Now;
+                TimeSpan t = TimeSpan.FromSeconds(duration);
+                while (startTime + t > DateTime.Now)
+                {
+                    KeyDown(key);
+                }
+                KeyUp(key);
+            });
+
+            thread.Start();
+        }
+
+        public static void PressKeyDurationBlocking(ConsoleKey key, int duration_ms)
+        {
+            KeyDown(key);
+            Thread.Sleep(duration_ms);
+            KeyUp(key);
+        }
+
+        public static void PressKeyIntervalDuration(ConsoleKey key, int interval_ms, int duration)
+        {
+            Thread thread = new Thread(() =>
+            {
+                Random random = new Random();
+                DateTime startTime = DateTime.Now;
+                TimeSpan t = TimeSpan.FromSeconds(duration);
+                DateTime startTime2 = DateTime.Now;
+                TimeSpan t2 = TimeSpan.FromMilliseconds(interval_ms);
+                while (startTime + t > DateTime.Now)
+                {
+                    if (startTime2 + t2 < DateTime.Now)
+                    { PressKey(key); startTime2 = DateTime.Now;}
+                }
+            });
+
+            thread.Start();
         }
 
         private static void RefocusOnOldScreen(ILog logger, Process activeProcess, Process wowProcess, System.Drawing.Point oldPosition)
