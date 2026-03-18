@@ -32,7 +32,7 @@ class ScreenRecordDataset(Dataset):
             data_pos = [all_png[-seq_length - i:-i or None] for i in range(last_n_pos - 1, -1, -1)]
             data = data_neg + data_pos * repeat_sample_pos
             gt_neg = [[x, y, 0] for i in range(n - seq_length - last_n_pos - skip_first)]
-            gt_pos = [[x, y, 640] for i in range(last_n_pos)]
+            gt_pos = [[x, y, 1] for i in range(last_n_pos)]
             gt = gt_neg + gt_pos * repeat_sample_pos
             self.data.extend(data)
             self.gt.extend(gt)
@@ -111,7 +111,8 @@ class ScreenRecordDataset(Dataset):
     def __getitem__(self, idx):
         all_png, all_gt = self.data[idx], self.gt[idx]
         image_tensor = torch.empty(self.seq_length, 3, 320, 320).float()
-        gt_tensor = torch.tensor(all_gt).float() / 640
+        gt_tensor = torch.tensor(all_gt).float()
+        gt_tensor[:2] /= 320.0  # normalize pixel coords to [0, 1]
         # image_tensor (YXC) -> (CYX) -> (SEQ,[B,G,R],Y,X) -> self.transform -> (SEQ, Y, X, [B, G, R])
         for i, png in enumerate(all_png):
             image_tensor[i] = torch.tensor(cv2.imread(png, cv2.IMREAD_COLOR)).permute(2, 0, 1).float() / 255

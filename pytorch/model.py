@@ -59,12 +59,15 @@ class FishNet(nn.Module):
 
         # Location decoder (8 pixel level)
         self.upconv1 = nn.ConvTranspose2d(16, 16, kernel_size=2, stride=2)
+        self.bn_up1 = nn.BatchNorm2d(16)
         self.upconv2 = nn.ConvTranspose2d(16, 1, kernel_size=2, stride=2)
-        self.dsnt_x = torch.arange(0, 1, 1 / 160).expand(160, 160)
-        self.dsnt_y = torch.arange(0, 1, 1 / 160).expand(160, 160).T
+        self.bn_up2 = nn.BatchNorm2d(1)
+        self.register_buffer('dsnt_x', torch.arange(0, 1, 1 / 160).expand(160, 160).clone())
+        self.register_buffer('dsnt_y', torch.arange(0, 1, 1 / 160).expand(160, 160).T.clone())
 
         # Action decoder (16 pixel level)
         self.upconv3 = nn.ConvTranspose2d(16, 4, kernel_size=2, stride=2)
+        self.bn_up3 = nn.BatchNorm2d(4)
         self.fc1 = nn.Linear(4 * 80 * 80, 64)
         self.layernorm = nn.LayerNorm(64)
         self.lstm = nn.LSTM(input_size=64, hidden_size=32, num_layers=1, batch_first=True)
@@ -84,9 +87,6 @@ class FishNet(nn.Module):
         B, T = bthwc.shape[0], bthwc.shape[1]
         btchw = self.btwhc2btchw(bthwc)
 
-        dsnt_x = self.dsnt_x.to(bthwc.device)
-        dsnt_y = self.dsnt_y.to(bthwc.device)
-
         lstm_features, location_features = [], []
         for i in range(T):
             x = self.conv1(btchw[:, i])
@@ -95,16 +95,16 @@ class FishNet(nn.Module):
             x = self.conv4(x)
 
             # Decouple predictor from locator branch, without upconv3 model is harder to train.
-            xlstm = self.upconv3(x)
+            xlstm = self.relu(self.bn_up3(self.upconv3(x)))
             xlstm = self.relu(self.fc1(xlstm.view(xlstm.size(0), -1)))
             lstm_features.append(self.layernorm(xlstm))
 
             # Deconv into a heatmap, then use dsnt-like techniques
-            xymap = self.relu(self.upconv1(x))
-            xymap = self.upconv2(xymap)
+            xymap = self.relu(self.bn_up1(self.upconv1(x)))
+            xymap = self.relu(self.bn_up2(self.upconv2(xymap)))
             prob = F.softmax(xymap.view(xymap.size(0), -1), dim=-1).view_as(xymap)
-            xlocation = torch.sum(dsnt_x * prob, dim=(2, 3))
-            ylocation = torch.sum(dsnt_y * prob, dim=(2, 3))
+            xlocation = torch.sum(self.dsnt_x * prob, dim=(2, 3))
+            ylocation = torch.sum(self.dsnt_y * prob, dim=(2, 3))
             location = torch.cat([xlocation, ylocation], dim=-1)
             location_features.append(location)
 
